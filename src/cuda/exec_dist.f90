@@ -4,7 +4,7 @@ module m_cuda_exec_dist
 
   use m_common, only: dp
   use m_cuda_common, only: SZ
-  use m_cuda_kernels_dist, only: der_univ_dist, der_univ_subs, &
+  use m_cuda_kernels_dist, only: der_univ_dist, der_univ_subs, der_univ_dist_shared&
                                  transeq_3fused_dist, transeq_3fused_subs
   use m_cuda_sendrecv, only: sendrecv_fields, sendrecv_3fields
   use m_cuda_tdsops, only: cuda_tdsops_t
@@ -37,7 +37,7 @@ contains
 
     n_data = SZ*1*blocks%x
 
-    call der_univ_dist<<<blocks, threads>>>( & !&
+    call der_univ_dist_shared<<<blocks, threads, 8*SZ*tdsops%tds_n>>>( & !&
       du, du_send_s, du_send_e, u, u_recv_s, u_recv_e, &
       tdsops%coeffs_s_dev, tdsops%coeffs_e_dev, tdsops%coeffs_dev, &
       tdsops%tds_n, tdsops%dist_fw_dev, tdsops%dist_bw_dev, &

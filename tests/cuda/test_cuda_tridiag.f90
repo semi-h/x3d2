@@ -46,10 +46,11 @@ program test_cuda_tridiag
   pnext = modulo(nrank - nproc + 1, nproc)
   pprev = modulo(nrank - 1, nproc)
 
-  n_glob = 512*2
+  n_glob = 32*4
   n = n_glob/nproc
-  n_block = 512*512/SZ
-  n_iters = 100
+  n_block = 2*2*8*8*128*512/SZ
+  n_iters = 1000
+  print*, 'n, block', n, n_block
 
   allocate (u(SZ, n, n_block), du(SZ, n, n_block))
   allocate (u_dev(SZ, n, n_block), du_dev(SZ, n, n_block))

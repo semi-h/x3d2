@@ -2,6 +2,7 @@ module m_cuda_kernels_dist
   use cudafor
 
   use m_common, only: dp
+  use m_cuda_common, only: SZ
 
   implicit none
 
@@ -192,6 +193,151 @@ contains
     du(i, n, b) = du_e
 
   end subroutine der_univ_subs
+
+  attributes(global) subroutine der_univ_dist_shared( &
+    du, send_u_s, send_u_e, u, u_s, u_e, coeffs_s, coeffs_e, coeffs, n, &
+    ffr, fbc, faf &
+    )
+    implicit none
+
+    ! Arguments
+    real(dp), device, intent(out), dimension(:, :, :) :: du, send_u_s, &
+                                                         send_u_e
+    real(dp), device, intent(in), dimension(:, :, :) :: u, u_s, u_e
+    real(dp), device, intent(in), dimension(:, :) :: coeffs_s, coeffs_e
+    real(dp), device, intent(in), dimension(:) :: coeffs
+    integer, value, intent(in) :: n
+    real(dp), device, intent(in), dimension(:) :: ffr, fbc, faf
+
+    ! Local variables
+    real(8), shared :: s(*)
+
+    integer :: i, j, b, k, lj
+    integer :: jm2, jm1, jp1, jp2
+
+    real(dp) :: c_m4, c_m3, c_m2, c_m1, c_j, c_p1, c_p2, c_p3, c_p4, &
+                temp_du, alpha, last_r
+
+    i = threadIdx%x
+    b = blockIdx%x
+
+    ! store bulk coeffs in the registers
+    c_m4 = coeffs(1); c_m3 = coeffs(2); c_m2 = coeffs(3); c_m1 = coeffs(4)
+    c_j = coeffs(5)
+    c_p1 = coeffs(6); c_p2 = coeffs(7); c_p3 = coeffs(8); c_p4 = coeffs(9)
+    last_r = ffr(1)
+
+    temp_du = coeffs_s(1, 1)*u_s(i, 1, b) &
+              + coeffs_s(2, 1)*u_s(i, 2, b) &
+              + coeffs_s(3, 1)*u_s(i, 3, b) &
+              + coeffs_s(4, 1)*u_s(i, 4, b) &
+              + coeffs_s(5, 1)*u(i, 1, b) &
+              + coeffs_s(6, 1)*u(i, 2, b) &
+              + coeffs_s(7, 1)*u(i, 3, b) &
+              + coeffs_s(8, 1)*u(i, 4, b) &
+              + coeffs_s(9, 1)*u(i, 5, b)
+    s(i + 0*SZ) = temp_du*faf(1)
+    temp_du = coeffs_s(1, 2)*u_s(i, 2, b) &
+              + coeffs_s(2, 2)*u_s(i, 3, b) &
+              + coeffs_s(3, 2)*u_s(i, 4, b) &
+              + coeffs_s(4, 2)*u(i, 1, b) &
+              + coeffs_s(5, 2)*u(i, 2, b) &
+              + coeffs_s(6, 2)*u(i, 3, b) &
+              + coeffs_s(7, 2)*u(i, 4, b) &
+              + coeffs_s(8, 2)*u(i, 5, b) &
+              + coeffs_s(9, 2)*u(i, 6, b)
+    s(i + 1*SZ) = temp_du*faf(2)
+    temp_du = coeffs_s(1, 3)*u_s(i, 3, b) &
+              + coeffs_s(2, 3)*u_s(i, 4, b) &
+              + coeffs_s(3, 3)*u(i, 1, b) &
+              + coeffs_s(4, 3)*u(i, 2, b) &
+              + coeffs_s(5, 3)*u(i, 3, b) &
+              + coeffs_s(6, 3)*u(i, 4, b) &
+              + coeffs_s(7, 3)*u(i, 5, b) &
+              + coeffs_s(8, 3)*u(i, 6, b) &
+              + coeffs_s(9, 3)*u(i, 7, b)
+    s(i + 2*SZ) = ffr(3)*(temp_du - faf(3)*s(i + 1*SZ))
+    temp_du = coeffs_s(1, 4)*u_s(i, 4, b) &
+              + coeffs_s(2, 4)*u(i, 1, b) &
+              + coeffs_s(3, 4)*u(i, 2, b) &
+              + coeffs_s(4, 4)*u(i, 3, b) &
+              + coeffs_s(5, 4)*u(i, 4, b) &
+              + coeffs_s(6, 4)*u(i, 5, b) &
+              + coeffs_s(7, 4)*u(i, 6, b) &
+              + coeffs_s(8, 4)*u(i, 7, b) &
+              + coeffs_s(9, 4)*u(i, 8, b)
+    s(i + 3*SZ) = ffr(4)*(temp_du - faf(3)*s(i + 2*SZ))
+
+    alpha = faf(5)
+
+    do j = 5, n - 4
+      temp_du = c_m4*u(i, j - 4, b) + c_m3*u(i, j - 3, b) &
+                + c_m2*u(i, j - 2, b) + c_m1*u(i, j - 1, b) &
+                + c_j*u(i, j, b) &
+                + c_p1*u(i, j + 1, b) + c_p2*u(i, j + 2, b) &
+                + c_p3*u(i, j + 3, b) + c_p4*u(i, j + 4, b)
+      s(i + (j - 1)*SZ) = ffr(j)*(temp_du - alpha*s(i + (j - 2)*SZ))
+    end do
+
+    j = n - 3
+    temp_du = coeffs_e(1, 1)*u(i, j - 4, b) &
+              + coeffs_e(2, 1)*u(i, j - 3, b) &
+              + coeffs_e(3, 1)*u(i, j - 2, b) &
+              + coeffs_e(4, 1)*u(i, j - 1, b) &
+              + coeffs_e(5, 1)*u(i, j, b) &
+              + coeffs_e(6, 1)*u(i, j + 1, b) &
+              + coeffs_e(7, 1)*u(i, j + 2, b) &
+              + coeffs_e(8, 1)*u(i, j + 3, b) &
+              + coeffs_e(9, 1)*u_e(i, 1, b)
+    s(i + (j - 1)*SZ) = ffr(j)*(temp_du - faf(j)*s(i + (j - 2)*SZ))
+    j = n - 2
+    temp_du = coeffs_e(1, 2)*u(i, j - 4, b) &
+              + coeffs_e(2, 2)*u(i, j - 3, b) &
+              + coeffs_e(3, 2)*u(i, j - 2, b) &
+              + coeffs_e(4, 2)*u(i, j - 1, b) &
+              + coeffs_e(5, 2)*u(i, j, b) &
+              + coeffs_e(6, 2)*u(i, j + 1, b) &
+              + coeffs_e(7, 2)*u(i, j + 2, b) &
+              + coeffs_e(8, 2)*u_e(i, 1, b) &
+              + coeffs_e(9, 2)*u_e(i, 2, b)
+    s(i + (j - 1)*SZ) = ffr(j)*(temp_du - faf(j)*s(i + (j - 2)*SZ))
+    j = n - 1
+    temp_du = coeffs_e(1, 3)*u(i, j - 4, b) &
+              + coeffs_e(2, 3)*u(i, j - 3, b) &
+              + coeffs_e(3, 3)*u(i, j - 2, b) &
+              + coeffs_e(4, 3)*u(i, j - 1, b) &
+              + coeffs_e(5, 3)*u(i, j, b) &
+              + coeffs_e(6, 3)*u(i, j + 1, b) &
+              + coeffs_e(7, 3)*u_e(i, 1, b) &
+              + coeffs_e(8, 3)*u_e(i, 2, b) &
+              + coeffs_e(9, 3)*u_e(i, 3, b)
+    s(i + (j - 1)*SZ) = ffr(j)*(temp_du - faf(j)*s(i + (j - 2)*SZ))
+    j = n
+    temp_du = coeffs_e(1, 4)*u(i, j - 4, b) &
+              + coeffs_e(2, 4)*u(i, j - 3, b) &
+              + coeffs_e(3, 4)*u(i, j - 2, b) &
+              + coeffs_e(4, 4)*u(i, j - 1, b) &
+              + coeffs_e(5, 4)*u(i, j, b) &
+              + coeffs_e(6, 4)*u_e(i, 1, b) &
+              + coeffs_e(7, 4)*u_e(i, 2, b) &
+              + coeffs_e(8, 4)*u_e(i, 3, b) &
+              + coeffs_e(9, 4)*u_e(i, 4, b)
+    s(i + (j - 1)*SZ) = ffr(j)*(temp_du - faf(j)*s(i + (j - 2)*SZ))
+
+    send_u_e(i, 1, b) = s(i + (n - 1)*SZ)
+
+    ! Backward pass of the hybrid algorithm
+    temp_du = s(i + (n - 2)*SZ)
+    do j = n - 2, 2, -1
+      !du(i, j, b) = du(i, j, b) - fbc(j)*du(i, j + 1, b)
+      temp_du = s(i + (j - 1)*SZ) - fbc(j)*temp_du
+      du(i, j, b) = temp_du
+    end do
+    temp_du = last_r*(s(i) - fbc(1)*s(i + SZ))
+    send_u_s(i, 1, b) = temp_du
+    du(i, 1, b) = temp_du
+
+  end subroutine der_univ_dist_shared
 
   attributes(global) subroutine transeq_3fused_dist( &
     du, dud, d2u, &

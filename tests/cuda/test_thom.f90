@@ -4,6 +4,8 @@ program test_thom
 
   use m_common, only: dp, pi
   use m_cuda_common, only: SZ
+  use m_cuda_kernels_thom, only: der_univ_thom, der_univ_thom_per, &
+                                 der_univ_thom_shared, der_univ_thom_shared_per
   use m_cuda_exec_thom, only: exec_thom_tds_compact
   use m_cuda_tdsops, only: cuda_tdsops_t, cuda_tdsops_init
 
@@ -16,18 +18,19 @@ program test_thom
   type(cuda_tdsops_t) :: tdsops
 
   integer :: n, n_block, i, j, k, n_iters, ndof
-  integer :: n_glob
+  integer :: n_glob, cu_int
   integer :: ierr, ndevs, devnum, memClockRt, memBusWidth
 
   type(dim3) :: blocks, threads
   real(dp) :: dx, dx_per, norm_du, tol = 1d-8, tstart, tend
   real(dp) :: achievedBW, deviceBW
 
-  n_glob = 512*2
+  n_glob = 256
   n = n_glob
-  n_block = 512*512/SZ
-  n_iters = 100
+  n_block = 32*512*512/SZ
+  n_iters = 1000
   ndof = n_glob*n_block*SZ
+  print *, 'ndof:', ndof, n_block, SZ, n
 
   allocate (u(SZ, n, n_block), du(SZ, n, n_block))
   allocate (u_dev(SZ, n, n_block), du_dev(SZ, n, n_block))
@@ -46,6 +49,31 @@ program test_thom
   ! move data to device
   u_dev = u
 
+  ierr = cudaDeviceSetCacheConfig(cudaFuncCachePreferL1)
+  print*, ierr, 'cacheconfig', cu_int, cudaFuncCachePreferNone, &
+          cudaFuncCachePreferShared, cudaFuncCachePreferL1
+
+  ierr = cudaDeviceGetCacheConfig(cu_int)
+  print*, ierr, 'cacheconfig', cu_int, cudaFuncCachePreferNone, &
+          cudaFuncCachePreferShared, cudaFuncCachePreferL1
+
+
+  !ierr = cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte)
+  !print*, ierr, 'max shared mem', cudaDevAttrMaxSharedMemoryPerBlockOptin
+
+  ierr = cudaFuncSetAttribute(der_univ_thom_shared_per, &
+                              cudaFuncAttributePreferredSharedMemoryCarveout, &
+                              cudaSharedmemCarveoutMaxShared)
+                              !cudaSharedmemCarveoutMaxL1)
+  !print*, ierr, 'max shared mem', cudaDevAttrMaxSharedMemoryPerBlockOptin
+  ierr = cudaFuncSetAttribute(der_univ_thom_shared_per, &
+                              cudaFuncAttributeMaxDynamicSharedMemorySize, &
+                              163840)
+                              !128*1024)
+                              !98304)
+                              !cudaDevAttrMaxSharedMemoryPerBlockOptin)
+  !print*, ierr, 'max shared mem', cudaDevAttrMaxSharedMemoryPerBlockOptin
+ 
   ! preprocess the operator and coefficient arrays
   tdsops = cuda_tdsops_init(n, dx_per, operation='second-deriv', &
                             scheme='compact6', &
@@ -54,15 +82,33 @@ program test_thom
   blocks = dim3(n_block, 1, 1)
   threads = dim3(SZ, 1, 1)
 
+
   call cpu_time(tstart)
   do i = 1, n_iters
-    call exec_thom_tds_compact(du_dev, u_dev, tdsops, blocks, threads)
+    !call exec_thom_tds_compact(du_dev, u_dev, tdsops, blocks, threads)
+      !call der_univ_thom_per<<<blocks, threads>>>( & !&
+      call copycuda<<<blocks, threads>>>(du_dev, u_dev, n)
+  end do
+  call cpu_time(tend)
+  print *, 'Total time', tend - tstart
+  call checkperf(tend - tstart, n_iters, n_block, n, 2._dp)
+
+
+  call cpu_time(tstart)
+  do i = 1, n_iters
+    !call exec_thom_tds_compact(du_dev, u_dev, tdsops, blocks, threads)
+      !call der_univ_thom_per<<<blocks, threads>>>( & !&
+      call der_univ_thom_shared_per<<<blocks, threads, 8*n*(SZ)>>>( & !&
+        du_dev, u_dev, tdsops%coeffs_dev, tdsops%tds_n, tdsops%alpha, &
+        tdsops%thom_f_dev, tdsops%thom_s_dev, &
+        tdsops%thom_w_dev, tdsops%thom_p_dev &
+        )
   end do
   call cpu_time(tend)
   print *, 'Total time', tend - tstart
 
   ! 2 in fw pass, 2 in bw pass, 2 in final periodic pass: 6 in total
-  call checkperf(tend - tstart, n_iters, ndof, 6._dp)
+  call checkperf(tend - tstart, n_iters, n_block, n, 2._dp)
 
   ! check error
   du = du_dev
@@ -90,19 +136,38 @@ program test_thom
   ! move data to device
   u_dev = u
 
+  ierr = cudaFuncSetAttribute(der_univ_thom_shared, &
+                              cudaFuncAttributePreferredSharedMemoryCarveout, &
+                              cudaSharedmemCarveoutMaxShared)
+!                              cudaSharedmemCarveoutMaxL1)
+  ierr = cudaFuncSetAttribute(der_univ_thom_shared, &
+                              cudaFuncAttributeMaxDynamicSharedMemorySize, &
+                              163840)
+                      !102400
+                              !128*1024)
+                              !164*1024)
+                              !98304)
+                              !cudaDevAttrMaxSharedMemoryPerBlockOptin)
   ! preprocess the operator and coefficient arrays
   tdsops = cuda_tdsops_init(n, dx, operation='second-deriv', &
                             scheme='compact6', &
                             bc_start='dirichlet', bc_end='dirichlet')
   call cpu_time(tstart)
   do i = 1, n_iters
-    call exec_thom_tds_compact(du_dev, u_dev, tdsops, blocks, threads)
+    !call exec_thom_tds_compact(du_dev, u_dev, tdsops, blocks, threads)
+      !call der_univ_thom<<<blocks, threads>>>( & !&
+      call der_univ_thom_shared<<<blocks, threads, 8*n*(SZ)>>>( & !&
+        du_dev, u_dev, &
+        tdsops%coeffs_s_dev, tdsops%coeffs_e_dev, tdsops%coeffs_dev, &
+        tdsops%tds_n, tdsops%thom_f_dev, tdsops%thom_s_dev, &
+        tdsops%thom_w_dev &
+        )
   end do
   call cpu_time(tend)
   print *, 'Total time', tend - tstart
 
   ! 2 in fw pass, 2 in bw pass: 4 in total
-  call checkperf(tend - tstart, n_iters, ndof, 4._dp)
+  call checkperf(tend - tstart, n_iters, n_block, n, 2._dp)
 
   ! check error
   du = du_dev
@@ -126,17 +191,17 @@ program test_thom
 
 contains
 
-  subroutine checkperf(t_tot, n_iters, ndof, consumed_bw)
+  subroutine checkperf(t_tot, n_iters, nblock, n, consumed_bw)
     implicit none
 
     real(dp), intent(in) :: t_tot, consumed_bw
-    integer, intent(in) :: n_iters, ndof
+    integer, intent(in) :: n_iters, nblock, n
 
     real(dp) :: achievedBW, devBW
     integer :: ierr, memClockRt, memBusWidth
 
     ! BW utilisation and performance checks
-    achievedBW = consumed_bw*n_iters*ndof*dp/t_tot
+    achievedBW = consumed_bw*n_iters*nblock*n*SZ*dp/t_tot
 
     print'(a, f8.3, a)', 'Achieved BW: ', achievedBW/2**30, ' GiB/s'
 

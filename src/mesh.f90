@@ -80,7 +80,8 @@ module m_mesh
 
 contains
 
-  function mesh_init(dims_global, nproc_dir, L_global, BC_x, BC_y, BC_z) &
+  function mesh_init(dims_global, nproc_dir, L_global, BC_x, BC_y, BC_z, &
+                     rank_mapping, subdomain_sizes) &
     result(mesh)
     !! Completely initialise the mesh object.
     !! Upon initialisation the mesh object can be read-only and shouldn't be edited
@@ -89,6 +90,8 @@ contains
     integer, dimension(3), intent(in) :: nproc_dir ! Number of proc in each direction
     real(dp), dimension(3), intent(in) :: L_global
     character(len=*), dimension(2), intent(in) :: BC_x, BC_y, BC_z
+    integer, optional :: rank_mapping(3)
+    integer, optional :: subdomain_sizes(3)
     type(mesh_t) :: mesh
 
     character(len=20), dimension(3, 2) :: BC_all
@@ -147,7 +150,7 @@ contains
     mesh%par%nproc = product(nproc_dir(:))
     call MPI_Comm_rank(MPI_COMM_WORLD, mesh%par%nrank, ierr)
     call MPI_Comm_size(MPI_COMM_WORLD, mesh%par%nproc, ierr)
-    call domain_decomposition(mesh)
+    call domain_decomposition(mesh, rank_mapping)
 
     ! Set subdomain BCs
     do dir = 1, 3
@@ -169,7 +172,11 @@ contains
     end do
 
     ! Define number of cells and vertices in each direction
-    mesh%vert_dims = mesh%global_vert_dims/mesh%par%nproc_dir
+    if (present(subdomain_sizes) .and. .not. all(subdomain_sizes == 0)) then
+      mesh%vert_dims = subdomain_sizes
+    else
+      mesh%vert_dims = mesh%global_vert_dims/mesh%par%nproc_dir
+    end if
 
     do dir = 1, 3
       is_last_domain = (mesh%par%nrank_dir(dir) + 1 == mesh%par%nproc_dir(dir))
@@ -205,12 +212,13 @@ contains
 
   end subroutine
 
-  subroutine domain_decomposition(mesh)
+  subroutine domain_decomposition(mesh, rank_mapping)
     !! Supports 1D, 2D, and 3D domain decomposition.
     !!
     !! Current implementation allows only constant sub-domain size across a
     !! given direction.
     class(mesh_t), intent(inout) :: mesh
+    integer, optional :: rank_mapping(3)
 
     integer, allocatable, dimension(:, :, :) :: global_ranks
     integer :: i, nproc_x, nproc_y, nproc_z, nproc
@@ -226,8 +234,12 @@ contains
     allocate (global_ranks(nproc_x, nproc_y, nproc_z))
 
     ! set the corresponding global rank for each sub-domain
-    global_ranks = reshape([(i, i=0, mesh%par%nproc - 1)], &
-                           shape=[nproc_x, nproc_y, nproc_z])
+    if (present(rank_mapping) .and. .not. all(rank_mapping == 0)) then
+      global_ranks = rank_mapping
+    else
+      global_ranks = reshape([(i, i=0, mesh%par%nproc - 1)], &
+                             shape=[nproc_x, nproc_y, nproc_z])
+    end if
 
     ! subdomain position in the global domain
     subd_pos = findloc(global_ranks, mesh%par%nrank)

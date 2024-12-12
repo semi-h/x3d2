@@ -75,7 +75,42 @@ program xcompact
     nproc_dir = [1, 1, nproc]
   end if
 
-  mesh = mesh_t(dims_global, nproc_dir, L_global, BC_x, BC_y, BC_z)
+#ifdef WITH_2DECOMP
+
+  ! Everything below in if clause can be wrappend into a function somewhere
+  if (user_setting == 'FFT2DECOMP')
+    decomp_2d_init(L_global, nproc_dir[2], nproc_dir[3], BCs)
+
+    ! Get global_ranks
+    allocate(global_ranks(1, p_row, p_col))
+    allocate(global_ranks_lin(p_row*p_col))
+    global_ranks_lin(:) = 0
+
+    call MPI_Comm_rank(DECOMP_2D_COMM_CART_X, cart_rank, ierr)
+    call MPI_Cart_coords(DECOMP_2D_COMM_CART_X, cart_rank, 2, coords, ierr)
+
+    global_ranks_lin(coords(1)+1 + p_row*(coords(2))) = par%nrank
+
+    call MPI_Allreduce(MPI_IN_PLACE, global_ranks_lin, p_row*p_col, &
+                       MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
+    ! we have global rank mapping and xsize (subdomain shapes)
+  else
+    ! if not running with 2DECOMP
+    global_ranks_lin(:) = 0
+    xsizes(:) = 0
+  end if
+
+  ! ultimately, all we need at this stage these two
+  rank_mapping = global_ranks_lin !from 2decomp
+  subdomain_sizes = xsizes !from 2decomp
+#else
+  ! we dont specify a preference
+  rank_mapping = 0
+  subdomain_sizes = 0
+#endif
+
+  mesh = mesh_t(dims_global, nproc_dir, L_global, BC_x, BC_y, BC_z, &
+                rank_mapping, subdomain_sizes)
 
 #ifdef CUDA
   cuda_allocator = cuda_allocator_t(mesh, SZ)

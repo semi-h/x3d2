@@ -126,13 +126,29 @@ contains
     ! waves_set requires some of the preprocessed tdsops variables.
     call self%waves_set(mesh%geo, xdirps, ydirps, zdirps)
 
+    print*, 'waves, x=1, y=:, z=1', self%waves(3,:,2)
+    print*, 'waves, x=41, y=:, z=61', self%waves(41,:,61)
     ! use correct procedure based on BCs
     if (self%periodic_x .and. self%periodic_y .and. self%periodic_z) then
       self%poisson => poisson_000
+      print*, 'poisson_000'
     else if (self%periodic_x .and. (.not. self%periodic_y) &
              .and. (self%periodic_z)) then
+      print*, 'poisson_010'
       self%poisson => poisson_010
     end if
+
+    print*, 'n_glob', self%nx_glob, self%ny_glob, self%nz_glob
+    print*, 'n_loc', self%nx_loc, self%ny_loc, self%nz_loc
+    print*, 'n_spec', self%nx_spec, self%ny_spec, self%nz_spec
+    print*, 'sp_st', self%x_sp_st, self%y_sp_st, self%z_sp_st
+    !print*, 'kabcxy'
+    !print*, 'ax', self%ax
+    !print*, 'bx', self%bx
+    !print*, 'ay', self%ay
+    !print*, 'by', self%by
+    !print*, 'az', self%az
+    !print*, 'bz', self%bz
   end subroutine base_init
 
   subroutine solve_poisson(self, f, temp)
@@ -171,6 +187,9 @@ contains
 
     call self%undo_periodicity_y(f, temp)
 
+    !call self%fft_forward(f)
+    !call self%fft_postprocess_010
+    !call self%fft_backward(f)
   end subroutine poisson_010
 
   subroutine waves_set(self, geo, xdirps, ydirps, zdirps)
@@ -207,16 +226,22 @@ contains
       self%ax, self%bx, xkx, exs, xk2, nx, L_x, d_x, self%periodic_x, &
       xdirps%stagder_v2p%a, xdirps%stagder_v2p%b, xdirps%stagder_v2p%alpha &
       )
+    !print*, 'exs', exs
+    !print*, 'xk2', xk2
 
     call wave_numbers( &
       self%ay, self%by, yky, eys, yk2, ny, L_y, d_y, self%periodic_y, &
       ydirps%stagder_v2p%a, ydirps%stagder_v2p%b, ydirps%stagder_v2p%alpha &
       )
+    !print*, 'eys', eys
+    !print*, 'yk2', yk2
 
     call wave_numbers( &
       self%az, self%bz, zkz, ezs, zk2, nz, L_z, d_z, self%periodic_z, &
       zdirps%stagder_v2p%a, zdirps%stagder_v2p%b, zdirps%stagder_v2p%alpha &
       )
+    !print*, 'ezs', ezs
+    !print*, 'zk2', zk2
 
     if (self%periodic_z) then
       ! poisson 000, 100, 010, 110
@@ -278,25 +303,41 @@ contains
     integer :: i
 
     do i = 1, n
-      a(i) = sin((i - 1)*pi/n)
-      b(i) = cos((i - 1)*pi/n)
+      if (periodic) then
+        a(i) = sin((i - 1)*pi/n)
+        b(i) = cos((i - 1)*pi/n)
+      else
+        a(i) = sin((i - 1)*pi/2/n)
+        b(i) = cos((i - 1)*pi/2/n)
+      end if
     end do
 
-    do i = 1, n/2 + 1
-      w = 2*pi*(i - 1)/n
-      if (.not. periodic) w = w/2
-      wp = c_a*2*d*sin(0.5_dp*w) + c_b*2*d*sin(1.5_dp*w)
-      wp = wp/(1._dp + 2*c_alpha*cos(w))
+    if (periodic) then
+      do i = 1, n/2 + 1
+        w = 2*pi*(i - 1)/n
+        wp = c_a*2*d*sin(0.5_dp*w) + c_b*2*d*sin(1.5_dp*w)
+        wp = wp/(1._dp + 2*c_alpha*cos(w))
 
-      k(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*wp/L)
-      e(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*w/L)
-      k2(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*wp/L)**2
-    end do
-    do i = n/2 + 2, n
-      k(i) = k(n - i + 2)
-      e(i) = e(n - i + 2)
-      k2(i) = k2(n - i + 2)
-    end do
+        k(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*wp/L)
+        e(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*w/L)
+        k2(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*wp/L)**2
+      end do
+      do i = n/2 + 2, n
+        k(i) = k(n - i + 2)
+        e(i) = e(n - i + 2)
+        k2(i) = k2(n - i + 2)
+      end do
+    else
+      do i = 1, n
+        w = pi*(i - 1)/n
+        wp = c_a*2*d*sin(0.5_dp*w) + c_b*2*d*sin(1.5_dp*w)
+        wp = wp/(1._dp + 2*c_alpha*cos(w))
+
+        k(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*wp/L)
+        e(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*w/L)
+        k2(i) = cmplx(1._dp, 1._dp, kind=dp)*(n*wp/L)**2
+      end do
+    end if
 
   end subroutine wave_numbers
 

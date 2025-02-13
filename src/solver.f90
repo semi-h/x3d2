@@ -192,6 +192,8 @@ contains
     call backend%alloc_tdsops(dirps%stagder_p2v, n_vert, d, 'stag-deriv', &
                               stagder_scheme, bc_start, bc_end, from_to='p2v')
 
+    if (dir == 2) &
+    print*, 'dirps%stagder_v2p', dirps%stagder_v2p%n_tds, dirps%stagder_v2p%n_rhs
   end subroutine
 
   subroutine transeq(self, du, dv, dw, u, v, w)
@@ -287,6 +289,15 @@ contains
     class(field_t), intent(inout) :: div_u
     class(field_t), intent(in) :: u, v, w
 
+
+    integer :: dims(3), ierr
+    real(dp) :: u_max, u_min, u_mean
+    class(field_t), pointer :: u_out
+    class(field_t), pointer :: du_x, dv_x, dw_x, &
+      u_y, v_y, w_y, du_y, dv_y, dw_y, &
+      u_z, w_z, dw_z
+
+
     call self%vector_calculus%divergence_v2c( &
       div_u, u, v, w, &
       self%xdirps%stagder_v2p, self%xdirps%interpl_v2p, &
@@ -294,6 +305,200 @@ contains
       self%zdirps%stagder_v2p, self%zdirps%interpl_v2p &
       )
 
+if (.false.) then
+    if (div_u%dir /= DIR_Z .or. u%dir /= DIR_X .or. v%dir /= DIR_X &
+        .or. w%dir /= DIR_X) then
+      error stop 'Error in divergence_v2c input/output field dirs: &
+                  &output must be in DIR_Z, inputs must be in DIR_X layout.'
+    end if
+
+    du_x => self%backend%allocator%get_block(DIR_X)
+    dv_x => self%backend%allocator%get_block(DIR_X)
+    dw_x => self%backend%allocator%get_block(DIR_X)
+
+    ! Staggared der for u field in x
+    ! Interpolation for v field in x
+    ! Interpolation for w field in x
+    call self%backend%tds_solve(du_x, u, self%xdirps%stagder_v2p)
+    call self%backend%tds_solve(dv_x, v, self%xdirps%interpl_v2p)
+    call self%backend%tds_solve(dw_x, w, self%xdirps%interpl_v2p)
+
+
+    u_out => self%host_allocator%get_block(DIR_C)
+    call self%backend%get_field_data(u_out%data, v)
+
+    dims = self%mesh%get_dims(v%data_loc)
+    print*, 'v data loc', v%data_loc, dims
+    u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+                 /self%ngrid
+
+    call self%host_allocator%release_block(u_out)
+
+    call MPI_Allreduce(MPI_IN_PLACE, u_max, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_Allreduce(MPI_IN_PLACE, u_mean, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_SUM, MPI_COMM_WORLD, ierr)
+    if (self%mesh%par%is_root()) &
+      print *, 'v max min mean:', u_max, u_min, u_mean
+
+
+    u_out => self%host_allocator%get_block(DIR_C)
+    call self%backend%get_field_data(u_out%data, du_x)
+
+    dims = self%mesh%get_dims(du_x%data_loc)
+    print*, 'du_x data loc', du_x%data_loc, dims
+    u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+                 /self%ngrid
+
+    call self%host_allocator%release_block(u_out)
+
+    call MPI_Allreduce(MPI_IN_PLACE, u_max, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_Allreduce(MPI_IN_PLACE, u_mean, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_SUM, MPI_COMM_WORLD, ierr)
+    if (self%mesh%par%is_root()) &
+      print *, 'du_x max min mean:', u_max, u_min, u_mean
+
+
+    u_out => self%host_allocator%get_block(DIR_C)
+    call self%backend%get_field_data(u_out%data, dv_x)
+
+    dims = self%mesh%get_dims(dv_x%data_loc)
+    print*, 'dv_x data loc', dv_x%data_loc, dims
+    u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+                 /self%ngrid
+
+    call self%host_allocator%release_block(u_out)
+
+    call MPI_Allreduce(MPI_IN_PLACE, u_max, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_Allreduce(MPI_IN_PLACE, u_mean, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_SUM, MPI_COMM_WORLD, ierr)
+    if (self%mesh%par%is_root()) &
+      print *, 'dv_x max min mean:', u_max, u_min, u_mean
+
+
+
+    ! request fields from the allocator
+    u_y => self%backend%allocator%get_block(DIR_Y)
+    v_y => self%backend%allocator%get_block(DIR_Y)
+    w_y => self%backend%allocator%get_block(DIR_Y)
+
+    ! reorder data from x orientation to y orientation
+    call self%backend%reorder(u_y, du_x, RDR_X2Y)
+    call self%backend%reorder(v_y, dv_x, RDR_X2Y)
+    call self%backend%reorder(w_y, dw_x, RDR_X2Y)
+
+    call self%backend%allocator%release_block(du_x)
+    call self%backend%allocator%release_block(dv_x)
+    call self%backend%allocator%release_block(dw_x)
+
+    du_y => self%backend%allocator%get_block(DIR_Y)
+    dv_y => self%backend%allocator%get_block(DIR_Y)
+    dw_y => self%backend%allocator%get_block(DIR_Y)
+
+
+
+
+    u_out => self%host_allocator%get_block(DIR_C)
+    call self%backend%get_field_data(u_out%data, v_y)
+
+    dims = self%mesh%get_dims(v_y%data_loc)
+    print*, 'v_y data loc', v_y%data_loc, dims
+    u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+                 /self%ngrid
+!print*, 'v_y(1, :, 1)', u_out%data(1, 1:dims(2), 1)
+    call self%host_allocator%release_block(u_out)
+
+    call MPI_Allreduce(MPI_IN_PLACE, u_max, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_Allreduce(MPI_IN_PLACE, u_mean, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_SUM, MPI_COMM_WORLD, ierr)
+    if (self%mesh%par%is_root()) &
+      print *, 'v_y before max min mean:', u_max, u_min, u_mean
+
+
+
+
+    ! similar to the x direction, obtain derivatives in y.
+    call self%backend%tds_solve(du_y, u_y, self%ydirps%interpl_v2p)
+    call self%backend%tds_solve(dv_y, v_y, self%ydirps%stagder_v2p)
+    call self%backend%tds_solve(dw_y, w_y, self%ydirps%interpl_v2p)
+
+
+
+
+
+    u_out => self%host_allocator%get_block(DIR_C)
+    call self%backend%get_field_data(u_out%data, dv_y)
+
+    dims = self%mesh%get_dims(dv_y%data_loc)
+    print*, 'dv_y data loc', dv_y%data_loc, dims
+    u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+                 /self%ngrid
+!print*, 'dv_y(1, :, 1)', u_out%data(1, 1:dims(2), 1)
+    call self%host_allocator%release_block(u_out)
+
+    call MPI_Allreduce(MPI_IN_PLACE, u_max, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_Allreduce(MPI_IN_PLACE, u_mean, 1, MPI_DOUBLE_PRECISION, &
+                       MPI_SUM, MPI_COMM_WORLD, ierr)
+    if (self%mesh%par%is_root()) &
+      print *, 'dv_y before max min mean:', u_max, u_min, u_mean
+
+
+
+
+    ! we don't need the velocities in y orientation any more, so release
+    ! them to open up space.
+    ! It is important that this doesn't actually deallocate any memory,
+    ! it just makes the corresponding memory space available for use.
+    call self%backend%allocator%release_block(u_y)
+    call self%backend%allocator%release_block(v_y)
+    call self%backend%allocator%release_block(w_y)
+
+    ! just like in y direction, get some fields for the z derivatives.
+    u_z => self%backend%allocator%get_block(DIR_Z)
+    w_z => self%backend%allocator%get_block(DIR_Z)
+
+    ! du_y = dv_y + du_y
+    call self%backend%vecadd(1._dp, dv_y, 1._dp, du_y)
+
+    ! reorder from y to z
+    call self%backend%reorder(u_z, du_y, RDR_Y2Z)
+    call self%backend%reorder(w_z, dw_y, RDR_Y2Z)
+
+    ! release all the unnecessary blocks.
+    call self%backend%allocator%release_block(du_y)
+    call self%backend%allocator%release_block(dv_y)
+    call self%backend%allocator%release_block(dw_y)
+
+    dw_z => self%backend%allocator%get_block(DIR_Z)
+
+    ! get the derivatives in z
+    call self%backend%tds_solve(div_u, u_z, self%zdirps%interpl_v2p)
+    call self%backend%tds_solve(dw_z, w_z, self%zdirps%stagder_v2p)
+
+    ! div_u = div_u + dw_z
+    call self%backend%vecadd(1._dp, dw_z, 1._dp, div_u)
+
+    ! div_u array is in z orientation
+
+    ! there is no need to keep velocities in z orientation around, so release
+    call self%backend%allocator%release_block(u_z)
+    call self%backend%allocator%release_block(w_z)
+    call self%backend%allocator%release_block(dw_z)
+end if
   end subroutine divergence_v2p
 
   subroutine gradient_p2v(self, dpdx, dpdy, dpdz, pressure)
@@ -336,14 +541,16 @@ contains
     class(field_t), intent(inout) :: pressure
     class(field_t), intent(in) :: div_u
 
-    class(field_t), pointer :: p_temp
+    class(field_t), pointer :: p_temp, temp
 
     ! reorder into 3D Cartesian data structure
-    p_temp => self%backend%allocator%get_block(DIR_C, CELL)
+    p_temp => self%backend%allocator%get_block(DIR_C)
     call self%backend%reorder(p_temp, div_u, RDR_Z2C)
 
+    temp => self%backend%allocator%get_block(DIR_C)
     ! solve poisson equation with FFT based approach
-    call self%backend%poisson_fft%solve_poisson(p_temp, pressure)
+    call self%backend%poisson_fft%solve_poisson(p_temp, temp)
+    call self%backend%allocator%release_block(temp)
 
     ! reorder back to our specialist data structure from 3D Cartesian
     call self%backend%reorder(pressure, p_temp, RDR_C2Z)
@@ -359,6 +566,7 @@ contains
     class(field_t), intent(inout) :: pressure
     class(field_t), intent(in) :: div_u
 
+    call pressure%fill(0._dp)
   end subroutine poisson_cg
 
   subroutine pressure_correction(self, u, v, w)
@@ -368,14 +576,106 @@ contains
     class(field_t), intent(inout) :: u, v, w
 
     class(field_t), pointer :: div_u, pressure, dpdx, dpdy, dpdz
+    class(field_t), pointer :: u_out
+    real(dp) :: div_u_max, div_u_mean, u_min
+    integer :: ierr, dims(3), i, j, k
+    class(field_t), pointer :: u_host
+
+    u_host => self%host_allocator%get_block(DIR_C)
+    call self%backend%get_field_data(u_host%data, u)
+    dims = self%mesh%get_dims(VERT)
+    !print*, 'dims of divu', dims
+    !print*, 'data loc', u%data_loc
+    u_host%data(:, 1, :) = 0
+    u_host%data(:, dims(2), :) = 0
+    call self%backend%set_field_data(u, u_host%data)
+    call u%set_data_loc(VERT)
+
+    call self%backend%get_field_data(u_host%data, v)
+    dims = self%mesh%get_dims(VERT)
+    !print*, 'dims of divu', dims
+    u_host%data(:, 1, :) = 0
+    u_host%data(:, dims(2), :) = 0
+    call self%backend%set_field_data(v, u_host%data)
+    call v%set_data_loc(VERT)
+
+    call self%backend%get_field_data(u_host%data, w)
+    dims = self%mesh%get_dims(VERT)
+    !print*, 'dims of divu', dims
+    u_host%data(:, 1, :) = 0
+    u_host%data(:, dims(2), :) = 0
+    call self%backend%set_field_data(w, u_host%data)
+    call w%set_data_loc(VERT)
+!    print*, 'BC set' 
+
+
+
+    call self%host_allocator%release_block(u_host)
+
+
+
 
     div_u => self%backend%allocator%get_block(DIR_Z)
 
     call self%divergence_v2p(div_u, u, v, w)
 
+
+
+
+!    u_out => self%host_allocator%get_block(DIR_C)
+!    call self%backend%get_field_data(u_out%data, div_u)
+
+!    dims = self%mesh%get_dims(div_u%data_loc)
+!    div_u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+!    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+!    div_u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+!                 /self%ngrid
+
+!print*, 'div_u', u_out%data(1, 1:dims(2), 1)
+!    call self%host_allocator%release_block(u_out)
+!
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_max, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_MAX, MPI_COMM_WORLD, ierr)
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_mean, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_SUM, MPI_COMM_WORLD, ierr)
+!    if (self%mesh%par%is_root()) &
+!      print *, 'divu max min mean:', div_u_max, u_min, div_u_mean
+
+
+
+
     pressure => self%backend%allocator%get_block(DIR_Z)
 
     call self%poisson(pressure, div_u)
+
+
+
+
+
+
+!    u_out => self%host_allocator%get_block(DIR_C)
+!    call self%backend%get_field_data(u_out%data, pressure)
+
+!    dims = self%mesh%get_dims(pressure%data_loc)
+!    div_u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+!    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+!    div_u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+!                 /self%ngrid
+
+!print*, 'pressure', u_out%data(1, 1:dims(2), 1)
+!    call self%host_allocator%release_block(u_out)
+
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_max, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_MAX, MPI_COMM_WORLD, ierr)
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_mean, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_SUM, MPI_COMM_WORLD, ierr)
+!    if (self%mesh%par%is_root()) &
+!      print *, 'pressure max min mean:', div_u_max, u_min, div_u_mean
+!
+
+
+
+
 
     call self%backend%allocator%release_block(div_u)
 
@@ -386,6 +686,72 @@ contains
     call self%gradient_p2v(dpdx, dpdy, dpdz, pressure)
 
     call self%backend%allocator%release_block(pressure)
+
+
+!    u_out => self%host_allocator%get_block(DIR_C)
+!    call self%backend%get_field_data(u_out%data, dpdx)
+!
+!    dims = self%mesh%get_dims(dpdx%data_loc)
+!    print*, 'dpdx data loc', dpdx%data_loc, dims
+!    div_u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+!    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+!    div_u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+!                 /self%ngrid
+
+!    call self%host_allocator%release_block(u_out)
+
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_max, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_MAX, MPI_COMM_WORLD, ierr)
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_mean, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_SUM, MPI_COMM_WORLD, ierr)
+!    if (self%mesh%par%is_root()) &
+!      print *, 'dpdx max min mean:', div_u_max, u_min, div_u_mean
+
+
+
+
+!    u_out => self%host_allocator%get_block(DIR_C)
+!    call self%backend%get_field_data(u_out%data, dpdy)
+!
+!    dims = self%mesh%get_dims(dpdy%data_loc)
+!    print*, 'dpdy data loc', dpdy%data_loc, dims
+!    div_u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+!    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+!    div_u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+!                 /self%ngrid
+
+!print*, 'dpdy', u_out%data(1, 1:dims(2), 1)
+!    call self%host_allocator%release_block(u_out)
+!
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_max, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_MAX, MPI_COMM_WORLD, ierr)
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_mean, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_SUM, MPI_COMM_WORLD, ierr)
+!    if (self%mesh%par%is_root()) &
+!      print *, 'dpdy max min mean:', div_u_max, u_min, div_u_mean
+
+
+!    u_out => self%host_allocator%get_block(DIR_C)
+!    call self%backend%get_field_data(u_out%data, dpdz)
+!
+!    dims = self%mesh%get_dims(dpdz%data_loc)
+!    print*, 'dpdz data loc', dpdz%data_loc, dims
+!    div_u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
+!    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
+!    div_u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
+!                 /self%ngrid
+!
+!    call self%host_allocator%release_block(u_out)
+!
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_max, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_MAX, MPI_COMM_WORLD, ierr)
+!    call MPI_Allreduce(MPI_IN_PLACE, div_u_mean, 1, MPI_DOUBLE_PRECISION, &
+!                       MPI_SUM, MPI_COMM_WORLD, ierr)
+!    if (self%mesh%par%is_root()) &
+!      print *, 'dpdz max min mean:', div_u_max, u_min, div_u_mean
+
+
+
 
     ! velocity correction
     call self%backend%vecadd(-1._dp, dpdx, 1._dp, u)

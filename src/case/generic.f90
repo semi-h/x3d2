@@ -73,11 +73,12 @@ contains
 
   end subroutine postprocess_generic
 
-  subroutine forcings_generic(self, du, dv, dw)
+  subroutine forcings_generic(self, du, dv, dw, i)
     implicit none
 
     class(case_generic_t) :: self
     class(field_t), intent(inout) :: du, dv, dw
+    integer, intent(in) :: i
 
   end subroutine forcings_generic
 

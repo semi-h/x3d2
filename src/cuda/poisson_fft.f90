@@ -248,7 +248,7 @@ contains
     type is (cuda_field_t)
       padded_dev => f%data_d
     end select
-
+!print*, 'padded dev shape', f%get_shape()
     call c_f_pointer(self%xtdesc%descriptor, descriptor)
     call c_f_pointer(descriptor%data(1), d_dev, &
                      [self%nx_loc + 2, self%ny_loc, self%nz_loc])
@@ -277,6 +277,8 @@ contains
     call c_f_pointer(descriptor%data(1), c_dev, &
                      [self%nx_spec, self%ny_spec, self%nz_spec])
 
+    self%host_cdata = c_dev
+!    print*, 'before pp', self%host_cdata(1, :, 1)
     ! tsize is different than SZ, because here we work on a 3D Cartesian
     ! data structure, and free to specify any suitable thread/block size.
     tsize = 16
@@ -290,6 +292,9 @@ contains
       self%ax_dev, self%bx_dev, self%ay_dev, self%by_dev, &
       self%az_dev, self%bz_dev &
       )
+
+    self%host_cdata = c_dev
+!    print*, 'after pp', self%host_cdata(1, :, 1)
 
   end subroutine fft_postprocess_000_cuda
 
@@ -332,6 +337,12 @@ contains
 !      )
 
 if (.false.) then
+    self%host_cdata = c_dev
+    self%host_cdata = -self%host_cdata/(self%nx_glob*self%ny_glob*self%nz_glob)
+    c_dev = self%host_cdata
+end if
+
+if (.false.) then
     call process_spectral_010_xz_fw<<<blocks, threads>>>( & !&
       c_dev, self%waves_dev, self%nx_spec, self%ny_spec, self%y_sp_st, &
       self%nx_glob, self%ny_glob, self%nz_glob, &
@@ -355,6 +366,7 @@ end if
 if (.true.) then
     !sort things at host side
     self%host_cdata = c_dev
+!print*, 'fftd', self%host_cdata(1, :, 1)
     !normalise
     self%host_cdata = self%host_cdata/(self%nx_glob*self%ny_glob*self%nz_glob)
     ! hack
@@ -409,7 +421,7 @@ if (.true.) then
           r4 = r_c*self%ay(iy)
 
           ! update the entry
-          self%host_cdata_2(i, j, k) = 0.5_dp*cmplx(l1 - l4 + r1 - r4, &
+          self%host_cdata_2(i, j, k) = 0.5_dp*cmplx(l1 + l4 + r1 - r4, &
                                                     -l2 + l3 + r2 + r3, kind=dp)
 !if (abs(self%host_cdata_2(i, j, k)) > 1.0e-4) print*, 'fw y, >e-4 at', i, j, k, self%host_cdata_2(i, j, k)
         end do
@@ -424,12 +436,12 @@ if (.true.) then
 
           tmp_r = real(self%waves(i, j, k), kind=dp)
           tmp_c = aimag(self%waves(i, j, k))
-          if (abs(tmp_r) < 1.e-14_dp) then
+          if (abs(tmp_r) < 1.e-16_dp) then
             div_r = 0._dp
           else
             div_r = -div_r/tmp_r
           end if
-          if (abs(tmp_c) < 1.e-14_dp) then
+          if (abs(tmp_c) < 1.e-16_dp) then
             div_c = 0._dp
           else
             div_c = -div_c/tmp_c
@@ -437,7 +449,9 @@ if (.true.) then
 
           ! update the entry
           self%host_cdata_2(i, j, k) = cmplx(div_r, div_c, kind=dp)
-          if (ix == self%nx_glob/2 + 1 .and. iz == self%nz_glob/2 + 1) self%host_cdata_2(i, j, k) = 0._dp
+          if (ix == self%nx_glob/2 + 1 .and. iz == self%nz_glob/2 + 1) then
+            self%host_cdata_2(i, j, k) = cmplx(0._dp, 0._dp, kind=dp)
+          end if
 !if (abs(self%host_cdata_2(i, j, k)) > 1.0e-4) print*, 'solve, >e-4 at', i, j, k, self%host_cdata_2(i, j, k)
         end do
       end do
@@ -541,7 +555,7 @@ end if
     !print*, self%host_data(1,:,1)
 
     self%host_data = f_in_dev
-    print*, 'before enforce', self%host_data(1, :, 1)
+!    print*, 'before enforce', self%host_data(1, :, 1)
     do k = 1, self%nz_loc
        do i = 1, self%nx_loc
           do j = 1, self%ny_glob/2
@@ -553,7 +567,10 @@ end if
        enddo
     end do
     f_out_dev = self%host_data_2
-    print*, 'after enforce', self%host_data_2(1, :, 1)
+!    print*, 'after enforce'
+!    do j = 1, self%ny_glob
+!      print*, self%host_data_2(1, j, 1)
+!    end do
 
   end subroutine enforce_periodicity_y_cuda
 
@@ -588,7 +605,7 @@ end if
     !self%host_data = f_out_dev
     !print*, 'line after undo periodicity'
     !print*, self%host_data(1,:,1)
-!
+
     self%host_data = f_in_dev
     do k = 1, self%nz_loc
        do i = 1, self%nx_loc
@@ -601,7 +618,7 @@ end if
        enddo
     end do
     f_out_dev = self%host_data_2
-    print*, 'after undo', self%host_data_2(1, :, 1)
+    !print*, 'after undo', self%host_data_2(1, :, 1)
 
   end subroutine undo_periodicity_y_cuda
 

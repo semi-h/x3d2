@@ -22,14 +22,15 @@ program test_cuda_tridiag
 
   type(cuda_tdsops_t) :: tdsops
 
-  integer :: n, n_block, i, j, k, n_halo, n_iters
+  integer :: n, n_loc, n_block, i, j, k, n_halo, n_iters
   integer :: n_glob
   integer :: nrank, nproc, pprev, pnext, tag1 = 1234, tag2 = 1234
+  integer :: bc_start, bc_end
   integer :: srerr(4), mpireq(4)
   integer :: ierr, ndevs, devnum, memClockRt, memBusWidth
 
   type(dim3) :: blocks, threads
-  real(dp) :: dx, dx_per, norm_du, tol = 1d-8, tstart, tend
+  real(dp) :: dx, dx_per, dx_pi, norm_du, tol = 1d-8, tstart, tend
   real(dp) :: achievedBW, deviceBW, achievedBWmax, achievedBWmin
 
   call MPI_Init(ierr)
@@ -46,21 +47,22 @@ program test_cuda_tridiag
   pnext = modulo(nrank - nproc + 1, nproc)
   pprev = modulo(nrank - 1, nproc)
 
-  n_glob = 512*2
+  n_glob = 360!512*2
   n = n_glob/nproc
   n_block = 512*512/SZ
-  n_iters = 100
+  n_iters = 1
 
   allocate (u(SZ, n, n_block), du(SZ, n, n_block))
   allocate (u_dev(SZ, n, n_block), du_dev(SZ, n, n_block))
 
   dx_per = 2*pi/n_glob
   dx = 2*pi/(n_glob - 1)
+  dx_pi = pi/(n_glob - 1)
 
   do k = 1, n_block
     do j = 1, n
       do i = 1, SZ
-        u(i, j, k) = sin((j - 1 + nrank*n)*dx_per)
+        u(i, j, k) = sin((j - 1 + nrank*n)*dx_pi)
       end do
     end do
   end do
@@ -80,9 +82,25 @@ program test_cuda_tridiag
   allocate (du_recv_s_dev(SZ, 1, n_block), du_recv_e_dev(SZ, 1, n_block))
 
   ! preprocess the operator and coefficient arrays
-  tdsops = cuda_tdsops_init(n, dx_per, operation='second-deriv', &
+!  tdsops = cuda_tdsops_init(n, dx_per, operation='second-deriv', &
+!                            scheme='compact6', &
+!                            bc_start=BC_PERIODIC, bc_end=BC_PERIODIC)
+  ! first derivative with dirichlet and neumann
+  if (nrank == 0) then
+    bc_start = BC_DIRICHLET
+  else
+    bc_start = BC_HALO
+  end if
+  if (nrank == nproc - 1) then
+    bc_end = BC_NEUMANN
+  else
+    bc_end = BC_HALO
+  end if
+  n_loc = n
+  if (nrank == nproc - 1) n_loc = n - 1
+  tdsops = cuda_tdsops_init(n_loc, dx_pi, operation='stag-deriv', &
                             scheme='compact6', &
-                            bc_start=BC_PERIODIC, bc_end=BC_PERIODIC)
+                            bc_start=bc_start, bc_end=bc_end, from_to='v2p')
 
   blocks = dim3(n_block, 1, 1)
   threads = dim3(SZ, 1, 1)
@@ -138,6 +156,14 @@ program test_cuda_tridiag
   call MPI_Allreduce(MPI_IN_PLACE, norm_du, 1, MPI_DOUBLE_PRECISION, &
                      MPI_SUM, MPI_COMM_WORLD, ierr)
   norm_du = sqrt(norm_du)
+
+
+  do j = 1, n_loc
+    print*, 'u, du', du(1, j, 1), cos((j - 1 + nrank*n)*dx_pi + dx_pi/2._dp)
+  end do
+  do j = 1, n_loc
+    print*, 'u, du', du(1, j, 1) - cos((j - 1 + nrank*n)*dx_pi + dx_pi/2._dp)
+  end do
 
   if (nrank == 0) print *, 'error norm', norm_du
 

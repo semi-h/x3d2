@@ -77,11 +77,12 @@ contains
     ! do nothing for TGV case
   end subroutine boundary_conditions_tgv
 
-  subroutine forcings_tgv(self, du, dv, dw)
+  subroutine forcings_tgv(self, du, dv, dw, i)
     implicit none
 
     class(case_tgv_t) :: self
     class(field_t), intent(inout) :: du, dv, dw
+    integer, intent(in) :: i
 
     ! do nothing for TGV case
   end subroutine forcings_tgv

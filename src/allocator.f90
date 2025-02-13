@@ -91,6 +91,7 @@ contains
     ! Current reorder functions do not require a padding in z-direction.
     nz_padded = nz
     cdims = [nx_padded, ny_padded, nz_padded]
+    print*, 'padded dims', cdims
 
     call self%mesh%set_sz(sz)
     call self%mesh%set_padded_dims(cdims)

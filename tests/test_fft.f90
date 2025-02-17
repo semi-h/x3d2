@@ -49,7 +49,6 @@ program test_fft
   real(dp), parameter :: tol=1e-10
   logical :: use_2decomp
   real(dp), allocatable, dimension(:, :, :) :: input_data, output_data
-  character(len=10) :: cf
 
 #ifdef CUDA
   type(cuda_backend_t), target :: cuda_backend
@@ -75,8 +74,7 @@ program test_fft
 #endif
 
   ! Global number of cells in each direction
-  dims_global = [32, 32, 32]
-  dims_global = [64, 64, 64]
+  dims_global = [64, 32, 128]
 
   ! Global domain dimensions
   L_global = [2*pi, 2*pi, 2*pi]
@@ -85,8 +83,7 @@ program test_fft
   nproc_dir = [1, 1, nproc]
 
   BC_x = ['periodic', 'periodic']
-  BC_y = ['periodic', 'periodic']
-  !BC_y = ['dirichlet', 'dirichlet']
+  BC_y = ['dirichlet', 'dirichlet']
   BC_z = ['periodic', 'periodic']
 
   mesh = mesh_t(dims_global, nproc_dir, L_global, BC_x, BC_y, BC_z, use_2decomp=use_2decomp)
@@ -126,18 +123,13 @@ program test_fft
 
   call input_field%fill(0._dp)
   call output_field%fill(0._dp)
-print*, 'fields filled'
+
   dims = mesh%get_padded_dims(DIR_C)
   allocate(input_data(dims(1), dims(2), dims(3)))
   allocate(output_data(dims(1), dims(2), dims(3)))
-print*, 'padded dims', dims
+
 
   coeff = 9.0_dp/2._dp
-  call get_command_argument(1, cf)
-  !coeff = real(cf, type=dp)/2._dp
-  read (cf, *) coeff
-  coeff = coeff/2._dp
-  print*, 'coeff', coeff
   ! Initialise field with some function
   do k = 1, dims(3)
     do j = 1, dims(2)
@@ -146,49 +138,26 @@ print*, 'padded dims', dims
         x = xloc(1) + mesh%geo%d(1)/2._dp
         y = xloc(2) + mesh%geo%d(2)/2._dp
         z = xloc(3) + mesh%geo%d(3)/2._dp
-        input_data(i, j, k) = cos(coeff*y)!*sin(x)*sin(z)!sin(x)*cos(y)*cos(z) + 2*x
+        input_data(i, j, k) = cos(coeff*y)
       end do
     end do
   end do
-print*, 'input_data set'
 
   call backend%set_field_data(input_field, input_data, DIR_C)
   call backend%set_field_data(output_field, input_data, DIR_C)
 
   call backend%init_poisson_fft(mesh, xdirps, ydirps, zdirps)
-print*, 'initialised'
 
-  ! Compute FFT and back
-  !call backend%poisson_fft%fft_forward(input_field)
-  !call backend%poisson_fft%fft_backward(output_field)
+  ! Compute FFT including postprocessing
   call backend%poisson_fft%poisson(output_field, temp_field)
-print*, 'fw bw'
+
   call backend%get_field_data(output_data, output_field, DIR_C)
 
   dims = mesh%get_dims(CELL)
-  do j = 1, dims(2)
-    print*, (1._dp/coeff)**2*input_data(1, j, 1), output_data(1, j, 1)
-  end do
-  do j = 1, dims(2)
-    print*, (1._dp/coeff)**2*input_data(1, j, 1) + output_data(1, j, 1)
-  end do
-  do j = 1, dims(2)
-!    print*, (1._dp/coeff)**2*input_data(64, j, 64), output_data(64, j, 64)
-  end do
   global_cells = mesh%get_global_dims(CELL)
-  print*, 'global cells', global_cells
-  !print*, input_data(:, 1:dims(2), :) + output_data(:, 1:dims(2), :)
-  ! The output scaled with number of cells in domain, hence the first '/product(dims_global)'. 
-  ! RMS value is used for the norm, hence the second '/product(dims_global)'
+
+  ! RMS value is used for the norm, hence '/product(dims_global)'
   error_norm = norm2((1._dp/coeff)**2*input_data(:, 1:dims(2), :) + output_data(:, 1:dims(2), :))**2
-  error_norm = 0._dp
-  do k = 1, dims(3)
-    do j = 1, dims(2)
-      do i = 1, dims(1)
-        error_norm = error_norm + ((1._dp/coeff)**2*input_data(i, j, k) + output_data(i, j, k))**2
-      end do
-    end do
-  end do
   call MPI_Allreduce(MPI_IN_PLACE, error_norm, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
   error_norm = sqrt(error_norm)/product(global_cells)
   print*, 'error norm', error_norm

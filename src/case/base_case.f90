@@ -25,7 +25,6 @@ module m_base_case
     procedure :: run
     procedure :: print_enstrophy
     procedure :: print_div_max_mean
-    procedure :: print_max_mean
   end type base_case_t
 
   abstract interface
@@ -200,39 +199,9 @@ contains
     call MPI_Allreduce(MPI_IN_PLACE, div_u_mean, 1, MPI_DOUBLE_PRECISION, &
                        MPI_SUM, MPI_COMM_WORLD, ierr)
     if (self%solver%mesh%par%is_root()) &
-      print *, 'div u max mean:', div_u_max, div_u_mean, '<-----------'
+      print *, 'div u max mean:', div_u_max, div_u_mean
 
   end subroutine print_div_max_mean
-  subroutine print_max_mean(self, u)
-    !! Reports the div(u) at cell centres
-    implicit none
-
-    class(base_case_t), intent(in) :: self
-    class(field_t), intent(in) :: u
-
-    class(field_t), pointer :: u_out
-    real(dp) :: u_max, u_min, u_mean
-    integer :: ierr, dims(3)
-
-    u_out => self%solver%host_allocator%get_block(DIR_C)
-    call self%solver%backend%get_field_data(u_out%data, u)
-
-    dims = self%solver%mesh%get_dims(u%data_loc)
-    u_max = maxval(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3))))
-    u_min = minval(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))
-    u_mean = sum(abs(u_out%data(1:dims(1), 1:dims(2), 1:dims(3)))) &
-                 /self%solver%ngrid
-
-    call self%solver%host_allocator%release_block(u_out)
-
-    call MPI_Allreduce(MPI_IN_PLACE, u_max, 1, MPI_DOUBLE_PRECISION, &
-                       MPI_MAX, MPI_COMM_WORLD, ierr)
-    call MPI_Allreduce(MPI_IN_PLACE, u_mean, 1, MPI_DOUBLE_PRECISION, &
-                       MPI_SUM, MPI_COMM_WORLD, ierr)
-    if (self%solver%mesh%par%is_root()) &
-      print *, 'max min mean:', u_max, u_min, u_mean
-
-  end subroutine print_max_mean
 
   subroutine run(self)
     !! Runs the solver forwards in time from t=t_0 to t=T, performing
@@ -256,39 +225,17 @@ contains
     do i = 1, self%solver%n_iters
       do j = 1, self%solver%time_integrator%nstage
         ! first apply case-specific BCs
-        !print*, 'u before bc'
-        !call self%print_max_mean(self%solver%u)
         call self%boundary_conditions()
 
         du => self%solver%backend%allocator%get_block(DIR_X)
         dv => self%solver%backend%allocator%get_block(DIR_X)
         dw => self%solver%backend%allocator%get_block(DIR_X)
 
-        !print*, 'u'
-        !call self%print_max_mean(self%solver%u)
-        !print*, 'v'
-        !call self%print_max_mean(self%solver%v)
-        !print*, 'w'
-        !call self%print_max_mean(self%solver%w)
         call self%solver%transeq(du, dv, dw, &
                                  self%solver%u, self%solver%v, self%solver%w)
 
-        !print*, 'du'
-        !call self%print_max_mean(du)
-        !print*, 'dv'
-        !call self%print_max_mean(dv)
-        !print*, 'dw'
-        !call self%print_max_mean(dw)
-
         ! models that introduce source terms handled here
         call self%forcings(du, dv, dw, i)
-        !print*, 'after forcing'
-        !print*, 'du'
-        !call self%print_max_mean(du)
-        !print*, 'dv'
-        !call self%print_max_mean(dv)
-        !print*, 'dw'
-        !call self%print_max_mean(dw)
 
         ! time integration
         call self%solver%time_integrator%step( &
@@ -300,13 +247,6 @@ contains
         call self%solver%backend%allocator%release_block(dv)
         call self%solver%backend%allocator%release_block(dw)
 
-        !print*, 'before pressure correct'
-        !print*, 'u'
-        !call self%print_max_mean(self%solver%u)
-        !print*, 'v'
-        !call self%print_max_mean(self%solver%v)
-        !print*, 'w'
-        !call self%print_max_mean(self%solver%w)
         call self%solver%pressure_correction(self%solver%u, self%solver%v, &
                                              self%solver%w)
       end do

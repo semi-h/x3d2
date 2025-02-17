@@ -116,7 +116,6 @@ contains
     self%x_sp_st = n_sp_st(1)
     self%y_sp_st = n_sp_st(2)
     self%z_sp_st = n_sp_st(3)
-    print*, 'sp_st', n_sp_st
 
     allocate (self%ax(self%nx_glob), self%bx(self%nx_glob))
     allocate (self%ay(self%ny_glob), self%by(self%ny_glob))
@@ -127,29 +126,13 @@ contains
     ! waves_set requires some of the preprocessed tdsops variables.
     call self%waves_set(mesh%geo, xdirps, ydirps, zdirps)
 
-    print*, 'waves, x=1, y=:, z=1', self%waves(1,:,1)
-    print*, 'waves, x=41, y=:, z=31', self%waves(41,:,31)
     ! use correct procedure based on BCs
     if (self%periodic_x .and. self%periodic_y .and. self%periodic_z) then
       self%poisson => poisson_000
-      print*, 'poisson_000'
     else if (self%periodic_x .and. (.not. self%periodic_y) &
              .and. (self%periodic_z)) then
-      print*, 'poisson_010'
       self%poisson => poisson_010
     end if
-
-    print*, 'n_glob', self%nx_glob, self%ny_glob, self%nz_glob
-    print*, 'n_loc', self%nx_loc, self%ny_loc, self%nz_loc
-    print*, 'n_spec', self%nx_spec, self%ny_spec, self%nz_spec
-    print*, 'sp_st', self%x_sp_st, self%y_sp_st, self%z_sp_st
-    !print*, 'kabcxy'
-    !print*, 'ax', self%ax
-    !print*, 'bx', self%bx
-    !print*, 'ay', self%ay
-    !print*, 'by', self%by
-    !print*, 'az', self%az
-    !print*, 'bz', self%bz
   end subroutine base_init
 
   subroutine solve_poisson(self, f, temp)
@@ -188,9 +171,6 @@ contains
 
     call self%undo_periodicity_y(f, temp)
 
-    !call self%fft_forward(f)
-    !call self%fft_postprocess_010
-    !call self%fft_backward(f)
   end subroutine poisson_010
 
   subroutine waves_set(self, geo, xdirps, ydirps, zdirps)
@@ -227,25 +207,16 @@ contains
       self%ax, self%bx, xkx, exs, xk2, nx, L_x, d_x, self%periodic_x, &
       xdirps%stagder_v2p%a, xdirps%stagder_v2p%b, xdirps%stagder_v2p%alpha &
       )
-    print*, 'exs', exs
-    print*, 'xk2', xk2
 
     call wave_numbers( &
       self%ay, self%by, yky, eys, yk2, ny, L_y, d_y, self%periodic_y, &
       ydirps%stagder_v2p%a, ydirps%stagder_v2p%b, ydirps%stagder_v2p%alpha &
       )
-    print*, 'ay', self%ay
-    print*, 'by', self%by
-    print*, 'yky', yky
-    print*, 'eys', eys
-    print*, 'yk2', yk2
 
     call wave_numbers( &
       self%az, self%bz, zkz, ezs, zk2, nz, L_z, d_z, self%periodic_z, &
       zdirps%stagder_v2p%a, zdirps%stagder_v2p%b, zdirps%stagder_v2p%alpha &
       )
-    print*, 'ezs', ezs
-    print*, 'zk2', zk2
 
     if (self%periodic_z) then
       ! poisson 000, 100, 010, 110
@@ -277,8 +248,8 @@ contains
             xt2 = xk2(ix)*(((ytt/yt1)*(ztt/zt1))**2)
             yt2 = yk2(iy)*(((xtt/xt1)*(ztt/zt1))**2)
             zt2 = zk2(iz)*(((xtt/xt1)*(ytt/yt1))**2)
+
             xyzk = xt2 + yt2 + zt2
-            if (i == 1 .and. j == 1 .and. k == 1) print*, 'xyzk', xyzk
             self%waves(i, j, k) = xyzk
           end do
         end do

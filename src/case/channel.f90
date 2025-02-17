@@ -157,7 +157,7 @@ contains
     class(case_channel_t) :: self
     integer, intent(in) :: iter
     real(dp), intent(in) :: t
-    
+
     integer :: iounit, dims(3), i, j, k
     character(len=20) :: name, iterchar
     class(field_t), pointer :: u_host
@@ -171,7 +171,6 @@ contains
     write(iterchar, '(i0)') iter
     name = 'u'//trim(iterchar)//'.vtr'
     open(newunit=iounit, file=trim(name), status='replace')
-
 
     dims = self%solver%mesh%get_dims(VERT)
     write(iounit, '(a)') '# vtk DataFile Version 2.0'
@@ -194,9 +193,8 @@ contains
       end do
     end do
     close(iounit)
-    !write(iounit, *) u_host%data(1:dims(1), 1:dims(2), 1:dims(3))
     call self%solver%host_allocator%release_block(u_host)
-    
+
   end subroutine postprocess_channel
 
   subroutine forcings_channel(self, du, dv, dw, i)

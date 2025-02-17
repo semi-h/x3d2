@@ -94,8 +94,6 @@ contains
     backend%yblocks = dim3(backend%mesh%get_n_groups(DIR_Y), 1, 1)
     backend%zthreads = dim3(SZ, 1, 1)
     backend%zblocks = dim3(backend%mesh%get_n_groups(DIR_Z), 1, 1)
-    !print*, 'ngroups x, y ,z', backend%mesh%get_n_groups(DIR_X), &
-    !        backend%mesh%get_n_groups(DIR_Y), backend%mesh%get_n_groups(DIR_Z)
 
     n_halo = 4
     ! Buffer size should be big enough for the largest MPI exchange.
@@ -606,18 +604,15 @@ contains
 
     real(dp), device, pointer, dimension(:, :, :) :: x_d, y_d
     type(dim3) :: blocks, threads
-    integer :: dims(3)
+    integer :: nx
 
     call resolve_field_t(x_d, x)
     call resolve_field_t(y_d, y)
 
-    dims = x%get_shape()
-    !nx = size(x_d, dim=2)
-    !blocks = dim3(size(x_d, dim=3), 1, 1)
-    !threads = dim3(SZ, 1, 1)
-    blocks = dim3(dims(3), 1, 1)
+    nx = size(x_d, dim=2)
+    blocks = dim3(size(x_d, dim=3), 1, 1)
     threads = dim3(SZ, 1, 1)
-    call axpby<<<blocks, threads>>>(dims(2), a, x_d, b, y_d) !&
+    call axpby<<<blocks, threads>>>(nx, a, x_d, b, y_d) !&
 
   end subroutine vecadd_cuda
 
@@ -704,7 +699,6 @@ contains
     n = size(f_d, dim=2)
     blocks = dim3(size(f_d, dim=3), 1, 1)
     threads = dim3(SZ, 1, 1)
-    !print*, 'n, ng', n, blocks
     call field_shift<<<blocks, threads>>>(f_d, a, n) !&
 
   end subroutine field_shift_cuda

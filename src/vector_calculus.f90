@@ -214,7 +214,7 @@ contains
     w_z => self%backend%allocator%get_block(DIR_Z)
 
     ! du_y = dv_y + du_y
-    !call self%backend%vecadd(1._dp, dv_y, 1._dp, du_y)
+    call self%backend%vecadd(1._dp, dv_y, 1._dp, du_y)
 
     ! reorder from y to z
     call self%backend%reorder(u_z, du_y, RDR_Y2Z)
@@ -229,10 +229,10 @@ contains
 
     ! get the derivatives in z
     call self%backend%tds_solve(div_u, u_z, z_interpl_v2c)
-    !call self%backend%tds_solve(dw_z, w_z, z_stagder_v2c)
+    call self%backend%tds_solve(dw_z, w_z, z_stagder_v2c)
 
     ! div_u = div_u + dw_z
-    !call self%backend%vecadd(1._dp, dw_z, 1._dp, div_u)
+    call self%backend%vecadd(1._dp, dw_z, 1._dp, div_u)
 
     ! div_u array is in z orientation
 

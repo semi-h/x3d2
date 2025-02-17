@@ -84,7 +84,7 @@ contains
 
     class(field_t), pointer :: u_init, v_init, w_init
 
-    integer :: i, j, k, dims(3)
+    integer :: i, j, k, dims(3), ii, code
     real(dp) :: xloc(3), y, noise, um
 
     dims = self%solver%mesh%get_dims(VERT)
@@ -92,10 +92,21 @@ contains
     v_init => self%solver%host_allocator%get_block(DIR_C)
     w_init => self%solver%host_allocator%get_block(DIR_C)
 
-!    call random_number(u_init%data)
-!    call random_number(v_init%data)
-!    call random_number(w_init%data)
+!    call system_clock(count=code)
+!    call random_seed(size=ii)
+!    print*, 'seed', ii, code
+!    call random_seed(put=code+63946*[(i - 1, i = 1, ii)])
 
+    call random_number(u_init%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    call random_number(v_init%data(1:dims(1), 1:dims(2), 1:dims(3)))
+    call random_number(w_init%data(1:dims(1), 1:dims(2), 1:dims(3)))
+
+      do j = 1, dims(2)
+          xloc = self%solver%mesh%get_coordinates(1, j, 1)
+          y = xloc(2) - self%solver%mesh%geo%L(2)/2._dp
+          um = exp(-5_dp*y*y)
+          print*, 'um', um
+      end do
     noise = 0.125_dp
     do k = 1, dims(3)
       do j = 1, dims(2)
@@ -104,29 +115,39 @@ contains
           y = xloc(2) - self%solver%mesh%geo%L(2)/2._dp
           um = exp(-0.2_dp*y*y)
 
-          u_init%data(i, j, k) = 1._dp - y*y !&
-                                 !+ noise*um*(2*u_init%data(i, j, k) - 1._dp)
+          u_init%data(i, j, k) = 1._dp - y*y &
+                                 + noise*um*(2*u_init%data(i, j, k) - 1._dp)
           v_init%data(i, j, k) = noise*um*(2*v_init%data(i, j, k) - 1._dp)
           w_init%data(i, j, k) = noise*um*(2*w_init%data(i, j, k) - 1._dp)
         end do
       end do
     end do
     print*, 'u_init', u_init%data(1, :, 1)
+    print*, 'v_init', v_init%data(1, :, 1)
+    u_init%data(:, 1, :) = 0
+    v_init%data(:, 1, :) = 0
+    w_init%data(:, 1, :) = 0
+    u_init%data(:, dims(2), :) = 0
+    v_init%data(:, dims(2), :) = 0
+    w_init%data(:, dims(2), :) = 0
 
     call self%solver%backend%set_field_data(self%solver%u, u_init%data)
-!    call self%solver%backend%set_field_data(self%solver%v, u_init%data)
-!    call self%solver%backend%set_field_data(self%solver%w, w_init%data)
+    call self%solver%backend%set_field_data(self%solver%v, v_init%data)
+    call self%solver%backend%set_field_data(self%solver%w, w_init%data)
 
     call self%solver%host_allocator%release_block(u_init)
     call self%solver%host_allocator%release_block(v_init)
     call self%solver%host_allocator%release_block(w_init)
 
-    call self%solver%v%fill(0._dp)
-    call self%solver%w%fill(0._dp)
+    !call self%solver%v%fill(0._dp)
+    !call self%solver%w%fill(0._dp)
 
     call self%solver%u%set_data_loc(VERT)
     call self%solver%v%set_data_loc(VERT)
     call self%solver%w%set_data_loc(VERT)
+    call self%print_max_mean(self%solver%u)
+    call self%print_max_mean(self%solver%v)
+    call self%print_max_mean(self%solver%w)
 
   end subroutine initial_conditions_channel
 
@@ -148,7 +169,7 @@ contains
     u_host => self%solver%host_allocator%get_block(DIR_C)
     call self%solver%backend%get_field_data(u_host%data, self%solver%u)
     write(iterchar, '(i0)') iter
-    name = 'u'//trim(iterchar)//'.csv'
+    name = 'u'//trim(iterchar)//'.vtr'
     open(newunit=iounit, file=trim(name), status='replace')
 
 
@@ -186,7 +207,7 @@ contains
     integer, intent(in) :: i
     integer :: dims(3)
 
-    if (i < 300) then
+    if (i < 5000) then
       call self%solver%backend%vecadd(-0.12_dp, self%solver%v, 1._dp, du)
       call self%solver%backend%vecadd(0.12_dp, self%solver%u, 1._dp, dv)
       !print*, 'u v shape', self%solver%u%get_shape(), self%solver%v%get_shape()

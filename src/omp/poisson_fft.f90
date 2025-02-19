@@ -96,6 +96,149 @@ contains
     implicit none
 
     class(omp_poisson_fft_t) :: self
+
+    real(dp) :: dir_r, div_c, temp_r, temp_c
+    integer :: i, j, k, ix, iy, iz
+
+    ! postproces in z
+    do k = 1, self%nz_spec
+      do j = 1, self%ny_spec
+        do i = 1, self%nx_spec
+          ix = i; iy = j + self%y_sp_st; iz = k
+          div_r = real(self%host_cdata(i, j, k), kind=dp)
+          div_c = aimag(self%host_cdata(i, j, k))
+
+          self%host_cdata(i, j, k) = cmplx(div_r*self%bz(iz) + div_c*self%az(iz), &
+                                           div_c*self%bz(iz) - div_r*self%az(iz), kind=dp)
+          if (iz > self%nz_glob/2 + 1) self%host_cdata(i, j, k) = -self%host_cdata(i, j, k)
+        end do
+      end do
+    end do
+    ! postproces in x
+    do k = 1, self%nz_spec
+      do j = 1, self%ny_spec
+        do i = 1, self%nx_spec
+          ix = i; iy = j + self%y_sp_st; iz = k
+          div_r = real(self%host_cdata(i, j, k), kind=dp)
+          div_c = aimag(self%host_cdata(i, j, k))
+
+          self%host_cdata(i, j, k) = cmplx(div_r*self%bx(ix) + div_c*self%ax(ix), &
+                                           div_c*self%bx(ix) - div_r*self%ax(ix), kind=dp)
+        end do
+      end do
+    end do
+
+    ! postprocess in y
+    do k = 1, self%nz_spec
+      do i = 1, self%nx_spec
+        self%host_cdata_2(i, 1, k) = self%host_cdata(i, 1, k)
+        do j = 2, self%ny_spec
+          ix = i; iy = j + self%y_sp_st; iz = k
+
+          l_r = real(self%host_cdata(i, j, k), kind=dp)
+          l_c = aimag(self%host_cdata(i, j, k))
+          r_r = real(self%host_cdata(i, self%ny_spec - j + 2, k), kind=dp)
+          r_c = aimag(self%host_cdata(i, self%ny_spec - j + 2, k))
+          l1 = l_r*self%by(iy)
+          l2 = l_r*self%ay(iy)
+          l3 = l_c*self%by(iy)
+          l4 = l_c*self%ay(iy)
+          r1 = r_r*self%by(iy)
+          r2 = r_r*self%ay(iy)
+          r3 = r_c*self%by(iy)
+          r4 = r_c*self%ay(iy)
+
+          ! update the entry
+          self%host_cdata_2(i, j, k) = 0.5_dp*cmplx(l1 + l4 + r1 - r4, &
+                                                    -l2 + l3 + r2 + r3, kind=dp)
+        end do
+      end do
+    end do
+    !solve poisson
+    do k = 1, self%nz_spec
+      do j = 1, self%ny_spec
+        do i = 1, self%nx_spec
+          div_r = real(self%host_cdata_2(i, j, k), kind=dp)
+          div_c = aimag(self%host_cdata_2(i, j, k))
+
+          tmp_r = real(self%waves(i, j, k), kind=dp)
+          tmp_c = aimag(self%waves(i, j, k))
+          if (abs(tmp_r) < 1.e-16_dp) then
+            div_r = 0._dp
+          else
+            div_r = -div_r/tmp_r
+          end if
+          if (abs(tmp_c) < 1.e-16_dp) then
+            div_c = 0._dp
+          else
+            div_c = -div_c/tmp_c
+          end if
+
+          ! update the entry
+          self%host_cdata_2(i, j, k) = cmplx(div_r, div_c, kind=dp)
+          if (ix == self%nx_glob/2 + 1 .and. iz == self%nz_glob/2 + 1) then
+            self%host_cdata_2(i, j, k) = cmplx(0._dp, 0._dp, kind=dp)
+          end if
+        end do
+      end do
+    end do
+
+    !post-process backward
+    ! post process in y
+    do k = 1, self%nz_spec
+      do i = 1, self%nx_spec
+        self%host_cdata(i, 1, k) = self%host_cdata_2(i, 1, k)
+        do j = 2, self%ny_spec
+          ix = i; iy = j + self%y_sp_st; iz = k
+
+          l_r = real(self%host_cdata_2(i, j, k), kind=dp)
+          l_c = aimag(self%host_cdata_2(i, j, k))
+          r_r = real(self%host_cdata_2(i, self%ny_spec - j + 2, k), kind=dp)
+          r_c = aimag(self%host_cdata_2(i, self%ny_spec - j + 2, k))
+          l1 = l_r*self%by(iy)
+          l2 = l_r*self%ay(iy)
+          l3 = l_c*self%by(iy)
+          l4 = l_c*self%ay(iy)
+          r1 = r_r*self%by(iy)
+          r2 = r_r*self%ay(iy)
+          r3 = r_c*self%by(iy)
+          r4 = r_c*self%ay(iy)
+
+          ! update the entry
+          self%host_cdata(i, j, k) = cmplx(l1 - l4 + r2 + r3, &
+                                           l2 + l3 - r1 + r4, kind=dp)
+        end do
+      end do
+    end do
+
+    ! postproces in x
+    do k = 1, self%nz_spec
+      do j = 1, self%ny_spec
+        do i = 1, self%nx_spec
+          ix = i; iy = j + self%y_sp_st; iz = k
+          div_r = real(self%host_cdata(i, j, k), kind=dp)
+          div_c = aimag(self%host_cdata(i, j, k))
+
+          self%host_cdata(i, j, k) = cmplx(div_r*self%bx(ix) - div_c*self%ax(ix), &
+                                           div_c*self%bx(ix) + div_r*self%ax(ix), kind=dp)
+        end do
+      end do
+    end do
+    ! postproces in z
+    do k = 1, self%nz_spec
+      do j = 1, self%ny_spec
+        do i = 1, self%nx_spec
+          ix = i; iy = j + self%y_sp_st; iz = k
+          div_r = real(self%host_cdata(i, j, k), kind=dp)
+          div_c = aimag(self%host_cdata(i, j, k))
+
+          self%host_cdata(i, j, k) = cmplx(div_r*self%bz(iz) - div_c*self%az(iz), &
+                                           div_c*self%bz(iz) + div_r*self%az(iz), kind=dp)
+          if (iz > self%nz_glob/2 + 1) self%host_cdata(i, j, k) = -self%host_cdata(i, j, k)
+        end do
+      end do
+    end do
+
   end subroutine fft_postprocess_010_omp
 
   subroutine enforce_periodicity_y_omp(self, f_out, f_in)
@@ -105,6 +248,19 @@ contains
     class(field_t), intent(inout) :: f_out
     class(field_t), intent(in) :: f_in
 
+    integer :: i, j, k
+
+    do k = 1, self%nz_loc
+       do i = 1, self%nx_loc
+          do j = 1, self%ny_glob/2
+             f_out%data(i, j, k) = f_in%data(i, 2*(j - 1) + 1, k)
+          end do
+          do j = self%ny_glob/2 + 1, self%ny_glob
+             f_out%data(i, j, k) = f_in%data(i, 2*self%ny_glob - 2*j + 2, k)
+          end do
+       end do
+    end do
+
   end subroutine enforce_periodicity_y_omp
 
   subroutine undo_periodicity_y_omp(self, f_out, f_in)
@@ -113,6 +269,19 @@ contains
     class(omp_poisson_fft_t) :: self
     class(field_t), intent(inout) :: f_out
     class(field_t), intent(in) :: f_in
+
+    integer :: i, j, k
+
+    do k = 1, self%nz_loc
+       do i = 1, self%nx_loc
+          do j = 1, self%ny_glob/2
+             f_out%data(i, 2*j - 1, k) = f_in%data(i, j, k)
+          end do
+          do j = 1, self%ny_glob/2
+             f_out%data(i, 2*j, k) = f_in%data(i,self%ny_glob - j + 1, k)
+          end do
+       end do
+    end do
 
   end subroutine undo_periodicity_y_omp
 

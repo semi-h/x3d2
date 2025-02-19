@@ -101,12 +101,6 @@ contains
     call random_number(v_init%data(1:dims(1), 1:dims(2), 1:dims(3)))
     call random_number(w_init%data(1:dims(1), 1:dims(2), 1:dims(3)))
 
-      do j = 1, dims(2)
-          xloc = self%solver%mesh%get_coordinates(1, j, 1)
-          y = xloc(2) - self%solver%mesh%geo%L(2)/2._dp
-          um = exp(-5_dp*y*y)
-          print*, 'um', um
-      end do
     noise = 0.125_dp
     do k = 1, dims(3)
       do j = 1, dims(2)
@@ -122,8 +116,7 @@ contains
         end do
       end do
     end do
-    print*, 'u_init', u_init%data(1, :, 1)
-    print*, 'v_init', v_init%data(1, :, 1)
+
     u_init%data(:, 1, :) = 0
     v_init%data(:, 1, :) = 0
     w_init%data(:, 1, :) = 0
@@ -139,15 +132,9 @@ contains
     call self%solver%host_allocator%release_block(v_init)
     call self%solver%host_allocator%release_block(w_init)
 
-    !call self%solver%v%fill(0._dp)
-    !call self%solver%w%fill(0._dp)
-
     call self%solver%u%set_data_loc(VERT)
     call self%solver%v%set_data_loc(VERT)
     call self%solver%w%set_data_loc(VERT)
-    call self%print_max_mean(self%solver%u)
-    call self%print_max_mean(self%solver%v)
-    call self%print_max_mean(self%solver%w)
 
   end subroutine initial_conditions_channel
 

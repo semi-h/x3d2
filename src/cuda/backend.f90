@@ -132,7 +132,7 @@ contains
 
   subroutine alloc_cuda_tdsops( &
     self, tdsops, n_tds, delta, operation, scheme, bc_start, bc_end, &
-    n_halo, from_to, sym, c_nu, nu0_nu &
+    stretch, n_halo, from_to, sym, c_nu, nu0_nu &
     )
     implicit none
 
@@ -142,6 +142,7 @@ contains
     real(dp), intent(in) :: delta
     character(*), intent(in) :: operation, scheme
     integer, intent(in) :: bc_start, bc_end
+    real(dp), optional, intent(in) :: stretch(:)
     integer, optional, intent(in) :: n_halo
     character(*), optional, intent(in) :: from_to
     logical, optional, intent(in) :: sym
@@ -152,7 +153,8 @@ contains
     select type (tdsops)
     type is (cuda_tdsops_t)
       tdsops = cuda_tdsops_t(n_tds, delta, operation, scheme, bc_start, &
-                             bc_end, n_halo, from_to, sym, c_nu, nu0_nu)
+                             bc_end, stretch, n_halo, from_to, sym, &
+                             c_nu, nu0_nu)
     end select
 
   end subroutine alloc_cuda_tdsops

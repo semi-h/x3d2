@@ -29,6 +29,7 @@ module m_tdsops
                                            dist_sa, dist_sc, & !! back subs.
                                            dist_af !! the auxiliary factors
     real(dp), allocatable, dimension(:) :: thom_f, thom_s, thom_w, thom_p
+    real(dp), allocatable :: stretch(:)
     real(dp), allocatable :: coeffs(:), coeffs_s(:, :), coeffs_e(:, :)
     real(dp) :: alpha, a, b, c = 0._dp, d = 0._dp !! Compact scheme coeffs
     logical :: periodic
@@ -57,8 +58,8 @@ module m_tdsops
 
 contains
 
-  function tdsops_init(n_tds, delta, operation, scheme, &
-                       bc_start, bc_end, n_halo, from_to, sym, c_nu, nu0_nu) &
+  function tdsops_init(n_tds, delta, operation, scheme, bc_start, bc_end, &
+                       stretch, n_halo, from_to, sym, c_nu, nu0_nu) &
     result(tdsops)
     !! Constructor function for the tdsops_t class.
     !!
@@ -85,6 +86,7 @@ contains
     real(dp), intent(in) :: delta !! Grid spacing
     character(*), intent(in) :: operation, scheme
     integer, intent(in) :: bc_start, bc_end !! Boundary Cond.
+    real(dp), optional, intent(in) :: stretch(:) !! Stretching coefficients
     integer, optional, intent(in) :: n_halo !! Number of halo cells
     character(*), optional, intent(in) :: from_to !! 'v2p' or 'p2v'
     logical, optional, intent(in) :: sym !! (==npaire), only for Neumann BCs
@@ -137,6 +139,13 @@ contains
     allocate (tdsops%coeffs(n_stencil))
     allocate (tdsops%coeffs_s(n_stencil, tdsops%n_halo))
     allocate (tdsops%coeffs_e(n_stencil, tdsops%n_halo))
+
+    allocate (tdsops%stretch(n_tds))
+    if (present(stretch)) then
+      tdsops%stretch(:) = stretch(:)
+    else
+      tdsops%stretch(:) = 1._dp
+    end if
 
     tdsops%periodic = bc_start == BC_PERIODIC .and. bc_end == BC_PERIODIC
 
